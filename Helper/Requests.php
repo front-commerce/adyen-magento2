@@ -355,7 +355,7 @@ class Requests extends AbstractHelper
      */
     public function buildRedirectData($storeId, $request = [])
     {
-        $request['redirectFromIssuerMethod'] = 'GET';
+        $request['redirectFromIssuerMethod'] = 'POST';
         $request['redirectToIssuerMethod'] = 'POST';
         $request['returnUrl'] = $this->adyenHelper->getOrigin($storeId) . '/adyen/process/redirect';
 
