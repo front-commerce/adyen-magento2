@@ -1,0 +1,161 @@
+From 42fe559b1bbf84a72353c5f916fb8f4cde965cea Mon Sep 17 00:00:00 2001
+From: alexandros <alexandros.moraitis@adyen.com>
+Date: Thu, 7 Jan 2021 20:11:06 +0100
+Subject: [PATCH 1/3] Implement importOrderPayment method in Adyen billing
+ aggreement
+
+---
+ Helper/Data.php             |  3 +--
+ Model/Billing/Agreement.php | 32 ++++++++++++++++++++++++++++++--
+ Model/Cron.php              |  2 +-
+ 3 files changed, 32 insertions(+), 5 deletions(-)
+
+diff --git a/Helper/Data.php b/Helper/Data.php
+index f1a3d564f..556d23e1c 100755
+--- a/Helper/Data.php
++++ b/Helper/Data.php
+@@ -1689,8 +1689,7 @@ public function createAdyenBillingAgreement($order, $additionalData)
+                     // create new BA
+                     $billingAgreement = $this->billingAgreementFactory->create();
+                     $billingAgreement->setStoreId($order->getStoreId());
+-                    $billingAgreement->importOrderPayment($order->getPayment());
+-                    if ($billingAgreement->getCustomerId() === null) {
++                    $billingAgreement->importOrderPaymentWithRecurringDetailReference($order->getPayment(), $additionalData['recurring.recurringDetailReference']);                    if ($billingAgreement->getCustomerId() === null) {
+                         $billingAgreement->setCustomerId($this->getCustomerId($order));
+                     }
+                     $message = __(
+diff --git a/Model/Billing/Agreement.php b/Model/Billing/Agreement.php
+index 7d5962c39..d08732e00 100644
+--- a/Model/Billing/Agreement.php
++++ b/Model/Billing/Agreement.php
+@@ -23,6 +23,8 @@
+ 
+ namespace Adyen\Payment\Model\Billing;
+ 
++use Magento\Sales\Model\Order\Payment;
++
+ class Agreement extends \Magento\Paypal\Model\Billing\Agreement
+ {
+     /**
+@@ -190,8 +192,8 @@ public function setCcBillingAgreement($contractDetail, $storeOneClick, $storeId)
+             !isset($contractDetail['paymentMethod'])
+         ) {
+             $this->_errors[] = __(
+-                '"In the Additional data in API response section, select: Card bin, 
+-                Card summary, Expiry Date, Cardholder name, Recurring details and Variant 
++                '"In the Additional data in API response section, select: Card bin,
++                Card summary, Expiry Date, Cardholder name, Recurring details and Variant
+                 to create billing agreements immediately after the payment is authorized."'
+             );
+             return $this;
+@@ -267,6 +269,32 @@ public function setCcBillingAgreement($contractDetail, $storeOneClick, $storeId)
+         return $this;
+     }
+ 
++    /**
++     * @param Payment $payment
++     * @param $recurringDetailReference
++     * @return $this
++     * @throws \Magento\Framework\Exception\LocalizedException
++     */
++    public function importOrderPaymentWithRecurringDetailReference(Payment $payment, $recurringDetailReference)
++    {
++        $baData = $payment->getBillingAgreementData();
++        $this->_paymentMethodInstance = (isset($baData['method_code']))
++            ? $this->_paymentData->getMethodInstance($baData['method_code'])
++            : $payment->getMethodInstance();
++        if(empty($baData['billing_agreement_id'])){
++            $baData['billing_agreement_id'] = $recurringDetailReference;
++        }
++
++        $this->_paymentMethodInstance->setStore($payment->getMethodInstance()->getStore());
++        $this->setCustomerId($payment->getOrder()->getCustomerId())
++            ->setMethodCode($this->_paymentMethodInstance->getCode())
++            ->setReferenceId($baData['billing_agreement_id'])
++            ->setStatus(self::STATUS_ACTIVE)
++            ->setAgreementLabel($this->_paymentMethodInstance->getTitle());
++
++        return $this;
++    }
++
+     public function getErrors()
+     {
+         return $this->_errors;
+diff --git a/Model/Cron.php b/Model/Cron.php
+index ee581d229..915540735 100755
+--- a/Model/Cron.php
++++ b/Model/Cron.php
+@@ -1289,7 +1289,7 @@ protected function _processNotification()
+ 
+                             $billingAgreement = $this->_billingAgreementFactory->create();
+                             $billingAgreement->setStoreId($this->_order->getStoreId());
+-                            $billingAgreement->importOrderPayment($this->_order->getPayment());
++                            $billingAgreement->importOrderPaymentWithRecurringDetailReference($this->_order->getPayment(), $recurringDetailReference);
+                             $message = __('Created billing agreement #%1.', $recurringDetailReference);
+                         } else {
+                             $this->_adyenLogger->addAdyenNotificationCronjob
+
+From e5644c7d0368094bbd7b2f59d686a1ca9cd68f21 Mon Sep 17 00:00:00 2001
+From: alexandros <alexandros.moraitis@adyen.com>
+Date: Thu, 7 Jan 2021 20:17:54 +0100
+Subject: [PATCH 2/3] Format the code
+
+---
+ Helper/Data.php | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/Helper/Data.php b/Helper/Data.php
+index 556d23e1c..3f012af0b 100755
+--- a/Helper/Data.php
++++ b/Helper/Data.php
+@@ -1689,7 +1689,11 @@ public function createAdyenBillingAgreement($order, $additionalData)
+                     // create new BA
+                     $billingAgreement = $this->billingAgreementFactory->create();
+                     $billingAgreement->setStoreId($order->getStoreId());
+-                    $billingAgreement->importOrderPaymentWithRecurringDetailReference($order->getPayment(), $additionalData['recurring.recurringDetailReference']);                    if ($billingAgreement->getCustomerId() === null) {
++                    $billingAgreement->importOrderPaymentWithRecurringDetailReference(
++                        $order->getPayment(),
++                        $additionalData['recurring.recurringDetailReference']
++                    );
++                    if ($billingAgreement->getCustomerId() === null) {
+                         $billingAgreement->setCustomerId($this->getCustomerId($order));
+                     }
+                     $message = __(
+
+From 9033b5165356b7a558c1d09b138c18c09ca3192b Mon Sep 17 00:00:00 2001
+From: alexandros <alexandros.moraitis@adyen.com>
+Date: Fri, 8 Jan 2021 11:39:50 +0100
+Subject: [PATCH 3/3] Remove reduntant setCustomerId
+
+---
+ Helper/Data.php             | 4 +---
+ Model/Billing/Agreement.php | 1 +
+ 2 files changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/Helper/Data.php b/Helper/Data.php
+index 3f012af0b..91bc2e3f9 100755
+--- a/Helper/Data.php
++++ b/Helper/Data.php
+@@ -1693,9 +1693,7 @@ public function createAdyenBillingAgreement($order, $additionalData)
+                         $order->getPayment(),
+                         $additionalData['recurring.recurringDetailReference']
+                     );
+-                    if ($billingAgreement->getCustomerId() === null) {
+-                        $billingAgreement->setCustomerId($this->getCustomerId($order));
+-                    }
++
+                     $message = __(
+                         'Created billing agreement #%1.',
+                         $additionalData['recurring.recurringDetailReference']
+diff --git a/Model/Billing/Agreement.php b/Model/Billing/Agreement.php
+index d08732e00..be8f5dd11 100644
+--- a/Model/Billing/Agreement.php
++++ b/Model/Billing/Agreement.php
+@@ -274,6 +274,7 @@ public function setCcBillingAgreement($contractDetail, $storeOneClick, $storeId)
+      * @param $recurringDetailReference
+      * @return $this
+      * @throws \Magento\Framework\Exception\LocalizedException
++     * todo: refactor or remove this method as those fields are set later
+      */
+     public function importOrderPaymentWithRecurringDetailReference(Payment $payment, $recurringDetailReference)
+     {
